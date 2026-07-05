@@ -1,0 +1,14 @@
+azw32pdf='for i in *.azw3; do ebook-convert "$i" "${i%.*}.pdf"; done'
+epub2pdf='for i in *.epub; do ebook-convert "$i" "${i%.*}.pdf"; done'
+k=kubectl
+l='ls -lah'
+la='ls -lAh'
+list_services='systemctl list-units  --type=service  --state=running'
+ll='exa --long --header --git'
+ls='ls --color=tty'
+lsa='ls -lah'
+mobi2pdf='for i in *.mobi; do ebook-convert "$i" "${i%.*}.pdf"; done'
+ocd=opencode
+pdf2epub='for i in *.pdf; do ebook-convert "$i" "${i%.*}.epub"; done'
+postgres='docker run -p 5432:5432 -e POSTGRES_PASSWORD=dbadmin -d postgres'
+vi=vim
