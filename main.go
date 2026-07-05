@@ -268,6 +268,10 @@ func writeManagedAliases(path string, aliases map[string]string) error {
 	}
 	defer f.Close()
 
+	if _, err := fmt.Fprintln(f, "unalias -a"); err != nil {
+		return err
+	}
+
 	var names []string
 	for name := range aliases {
 		names = append(names, name)
