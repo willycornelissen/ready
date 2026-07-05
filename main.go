@@ -133,6 +133,33 @@ func installApp(name string, info appInfo) error {
 	return fmt.Errorf("apt falhou e não há método alternativo")
 }
 
+func shellRCFile() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	bashVer := os.Getenv("BASH_VERSION")
+	zshVer := os.Getenv("ZSH_VERSION")
+
+	if bashVer != "" {
+		return filepath.Join(home, ".bashrc"), nil
+	}
+	if zshVer != "" {
+		return filepath.Join(home, ".zshrc"), nil
+	}
+
+	shell := os.Getenv("SHELL")
+	switch {
+	case strings.Contains(shell, "zsh"):
+		return filepath.Join(home, ".zshrc"), nil
+	case strings.Contains(shell, "bash"):
+		return filepath.Join(home, ".bashrc"), nil
+	default:
+		return filepath.Join(home, ".bashrc"), nil
+	}
+}
+
 func configureAliases(aliasesPath string) error {
 	desired, err := parseAliasesFile(aliasesPath)
 	if err != nil {
@@ -149,9 +176,9 @@ func configureAliases(aliasesPath string) error {
 		return fmt.Errorf("escrevendo %s: %w", aliasesFile, err)
 	}
 
-	rcFile := filepath.Join(home, ".zshrc")
-	if _, err := os.Stat(rcFile); os.IsNotExist(err) {
-		rcFile = filepath.Join(home, ".bashrc")
+	rcFile, err := shellRCFile()
+	if err != nil {
+		return fmt.Errorf("determinando rc file: %w", err)
 	}
 
 	rcData, err := os.ReadFile(rcFile)
