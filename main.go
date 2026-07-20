@@ -36,7 +36,7 @@ var appMap = map[string]appInfo{
 	"frogmouth":  {"frogmouth", "", []string{"snap", "install", "frogmouth"}},
 	"ffmpeg":     {"ffmpeg", "ffmpeg", nil},
 	"exa":        {"exa", "exa", nil},
-	"whichllm":   {"whichllm", "", []string{"pipx", "install", "which-llm"}},
+	"whichllm":   {"whichllm", "", []string{"pipx", "install", "whichllm"}},
 }
 
 var aliasRegex = regexp.MustCompile(`^\s*alias\s+([\w-]+)\s*=`)
@@ -133,31 +133,27 @@ func installApp(name string, info appInfo) error {
 	return fmt.Errorf("apt falhou e não há método alternativo")
 }
 
-func shellRCFile() (string, error) {
+func shellRCFiles() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return nil
 	}
 
-	bashVer := os.Getenv("BASH_VERSION")
-	zshVer := os.Getenv("ZSH_VERSION")
-
-	if bashVer != "" {
-		return filepath.Join(home, ".bashrc"), nil
-	}
-	if zshVer != "" {
-		return filepath.Join(home, ".zshrc"), nil
+	var files []string
+	bashrc := filepath.Join(home, ".bashrc")
+	if _, err := os.Stat(bashrc); err == nil {
+		files = append(files, bashrc)
 	}
 
-	shell := os.Getenv("SHELL")
-	switch {
-	case strings.Contains(shell, "zsh"):
-		return filepath.Join(home, ".zshrc"), nil
-	case strings.Contains(shell, "bash"):
-		return filepath.Join(home, ".bashrc"), nil
-	default:
-		return filepath.Join(home, ".bashrc"), nil
+	zshrc := filepath.Join(home, ".zshrc")
+	if _, err := os.Stat(zshrc); err == nil {
+		files = append(files, zshrc)
 	}
+
+	if len(files) == 0 {
+		files = append(files, bashrc)
+	}
+	return files
 }
 
 func configureAliases(aliasesPath string) error {
@@ -176,92 +172,94 @@ func configureAliases(aliasesPath string) error {
 		return fmt.Errorf("escrevendo %s: %w", aliasesFile, err)
 	}
 
-	rcFile, err := shellRCFile()
-	if err != nil {
-		return fmt.Errorf("determinando rc file: %w", err)
+	rcFiles := shellRCFiles()
+	if len(rcFiles) == 0 {
+		return fmt.Errorf("nenhum arquivo rc de shell encontrado")
 	}
 
-	rcData, err := os.ReadFile(rcFile)
-	if err != nil {
-		return fmt.Errorf("lendo %s: %w", rcFile, err)
-	}
-
-	lines := strings.Split(string(rcData), "\n")
-	currentAliases := extractAliases(lines)
-
-	toRemove := make(map[string]bool)
-	for name := range currentAliases {
-		if _, ok := desired[name]; !ok {
-			toRemove[name] = true
-		}
-	}
-
-	var newLines []string
-	inManaged := false
-	skipNext := false
-	for i, line := range lines {
-		if skipNext {
-			skipNext = false
-			continue
+	for _, rcFile := range rcFiles {
+		rcData, err := os.ReadFile(rcFile)
+		if err != nil {
+			return fmt.Errorf("lendo %s: %w", rcFile, err)
 		}
 
-		trimmed := strings.TrimSpace(line)
+		lines := strings.Split(string(rcData), "\n")
+		currentAliases := extractAliases(lines)
 
-		if trimmed == "# >>> opencode aliases >>>" {
-			inManaged = true
-			continue
-		}
-		if trimmed == "# <<< opencode aliases <<<" {
-			inManaged = false
-			continue
-		}
-		if inManaged {
-			continue
+		toRemove := make(map[string]bool)
+		for name := range currentAliases {
+			if _, ok := desired[name]; !ok {
+				toRemove[name] = true
+			}
 		}
 
-		if strings.TrimSpace(line) == fmt.Sprintf("source %s", aliasesFile) {
-			continue
-		}
+		var newLines []string
+		inManaged := false
+		skipNext := false
+		for i, line := range lines {
+			if skipNext {
+				skipNext = false
+				continue
+			}
 
-		if m := aliasRegex.FindStringSubmatch(trimmed); m != nil {
-			name := m[1]
-			if _, exists := desired[name]; exists {
+			trimmed := strings.TrimSpace(line)
+
+			if trimmed == "# >>> opencode aliases >>>" {
+				inManaged = true
+				continue
+			}
+			if trimmed == "# <<< opencode aliases <<<" {
+				inManaged = false
+				continue
+			}
+			if inManaged {
+				continue
+			}
+
+			if strings.TrimSpace(line) == fmt.Sprintf("source %s", aliasesFile) {
+				continue
+			}
+
+			if m := aliasRegex.FindStringSubmatch(trimmed); m != nil {
+				name := m[1]
+				if _, exists := desired[name]; exists {
+					if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "\\") {
+						skipNext = true
+					}
+					continue
+				}
+				if toRemove[name] {
+					if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "\\") {
+						skipNext = true
+					}
+					continue
+				}
 				if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "\\") {
 					skipNext = true
 				}
-				continue
 			}
-			if toRemove[name] {
-				if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "\\") {
-					skipNext = true
-				}
-				continue
-			}
-			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "\\") {
-				skipNext = true
-			}
+
+			newLines = append(newLines, line)
 		}
 
-		newLines = append(newLines, line)
-	}
+		newLines = append(newLines,
+			"",
+			"# >>> opencode aliases >>>",
+			fmt.Sprintf("source %s", aliasesFile),
+			"# <<< opencode aliases <<<",
+		)
 
-	newLines = append(newLines,
-		"",
-		"# >>> opencode aliases >>>",
-		fmt.Sprintf("source %s", aliasesFile),
-		"# <<< opencode aliases <<<",
-	)
+		if err := os.WriteFile(rcFile, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
+			return fmt.Errorf("escrevendo %s: %w", rcFile, err)
+		}
 
-	if err := os.WriteFile(rcFile, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
-		return fmt.Errorf("escrevendo %s: %w", rcFile, err)
-	}
-
-	removed := make([]string, 0, len(toRemove))
-	for name := range toRemove {
-		removed = append(removed, name)
-	}
-	if len(removed) > 0 {
-		fmt.Printf("↻ aliases removidos do shell: %s\n", strings.Join(removed, ", "))
+		removed := make([]string, 0, len(toRemove))
+		for name := range toRemove {
+			removed = append(removed, name)
+		}
+		if len(removed) > 0 {
+			fmt.Printf("↻ aliases removidos de %s: %s\n", filepath.Base(rcFile), strings.Join(removed, ", "))
+		}
 	}
 
 	fmt.Printf("✓ %d aliases configurados em %s\n", len(desired), aliasesFile)

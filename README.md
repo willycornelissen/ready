@@ -24,7 +24,7 @@ Ferramenta de configuração de ambiente que verifica e instala aplicações e g
 | frogmouth   | `frogmouth`       | —              | `snap install frogmouth`              |
 | ffmpeg      | `ffmpeg`          | `ffmpeg`       | —                                     |
 | exa         | `exa`             | `exa`          | —                                     |
-| whichllm    | `whichllm`        | —              | `pipx install which-llm`              |
+| whichllm    | `whichllm`        | —              | `pipx install whichllm`              |
 
 ## Aliases gerenciados
 
